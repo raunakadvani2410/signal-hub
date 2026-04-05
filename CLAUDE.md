@@ -16,33 +16,49 @@ Personal Command Center — a single-user personal dashboard aggregating email, 
 
 ## Commands
 
-**API (`apps/api`) — run from `apps/api/`**
+> On macOS, use `python3` — the `python` command is not aliased by default.
+> All `uvicorn`, `pytest`, and `alembic` commands must be run with the venv active,
+> or prefixed with `.venv/bin/` (e.g. `.venv/bin/uvicorn ...`).
+
+**API — one-time setup (run from `apps/api/`)**
 ```bash
-python -m venv .venv && source .venv/bin/activate
+cd apps/api
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e ../../packages/shared/python
 pip install -e ".[dev]"
-
-uvicorn app.main:app --reload          # dev server on :8000
-pytest                                 # run all tests
-pytest tests/test_health.py            # run one file
-
-alembic upgrade head                   # apply all migrations
-alembic revision --autogenerate -m "description"  # generate a migration
+cp .env.example .env
+# Edit .env — set DATABASE_URL with your macOS username (run `whoami` to find it)
 ```
 
-**Web (`apps/web`) — run from repo root**
+**API — daily use (run from `apps/api/`, venv active)**
 ```bash
-pnpm install                           # install all workspaces
-pnpm --filter web dev                  # dev server on :3000
+source .venv/bin/activate              # activate if not already active
+uvicorn app.main:app --reload          # dev server on http://localhost:8000
+pytest                                 # run all tests
+pytest tests/test_health.py           # run one test file
+alembic upgrade head                   # apply pending migrations
+alembic revision --autogenerate -m "description"  # generate a new migration
+```
+
+**Web — one-time setup (run from repo root)**
+```bash
+pnpm install                           # installs apps/web + packages/shared/typescript
+cp apps/web/.env.example apps/web/.env.local
+```
+
+**Web — daily use (run from repo root)**
+```bash
+pnpm --filter web dev                  # dev server on http://localhost:3000
 pnpm --filter web build
 pnpm --filter web lint
 pnpm --filter web type-check
 ```
 
-**Postgres — local setup (one-time)**
+**Postgres — one-time local setup**
 ```bash
-createdb signal_hub                    # create the database
-# Then in apps/api: alembic upgrade head
+createdb signal_hub                    # create the empty database
+# Then run: alembic upgrade head (from apps/api with venv active)
 ```
 
 ## Rules
