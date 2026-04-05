@@ -56,6 +56,52 @@ signal-hub/
 
 ---
 
+## Local Setup
+
+**Prerequisites**
+- Python 3.11+ (`python3 --version`)
+- Node 20+ (`node --version`) — use [nvm](https://github.com/nvm-sh/nvm) if needed (`nvm use`)
+- pnpm (`npm install -g pnpm`)
+- PostgreSQL running locally (`brew install postgresql@16 && brew services start postgresql@16`)
+
+**1 — Database (one-time)**
+```bash
+createdb signal_hub
+```
+
+**2 — Backend**
+```bash
+cd apps/api
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ../../packages/shared/python
+pip install -e ".[dev]"
+cp .env.example .env
+# Edit .env: set DATABASE_URL — replace YOUR_USERNAME with your macOS username (run: whoami)
+alembic upgrade head              # creates the database tables
+uvicorn app.main:app --reload     # starts API on http://localhost:8000
+```
+
+**3 — Frontend**
+```bash
+# From repo root:
+pnpm install
+cp apps/web/.env.example apps/web/.env.local
+pnpm --filter web dev             # starts web on http://localhost:3000
+```
+
+**Verify everything works**
+
+| Check | URL / Command |
+|---|---|
+| Backend health | `http://localhost:8000/health` → `{"status":"ok"}` |
+| Integration list | `http://localhost:8000/api/integrations/` → JSON array of 6 integrations |
+| API docs | `http://localhost:8000/docs` → Swagger UI |
+| Frontend | `http://localhost:3000` → placeholder page |
+| Tests | `cd apps/api && source .venv/bin/activate && pytest` → 2 passed |
+
+---
+
 ## Development Phases
 
 | Phase | Scope |
