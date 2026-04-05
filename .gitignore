@@ -38,3 +38,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# OAuth tokens (personal credentials — never commit)
+.tokens/

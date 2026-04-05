@@ -61,6 +61,12 @@ createdb signal_hub                    # create the empty database
 # Then run: alembic upgrade head (from apps/api with venv active)
 ```
 
+## Docs
+
+- `docs/architecture.md` — system design and layer boundaries
+- `docs/product-spec.md` — integration status, scope, success criteria
+- `docs/google-oauth-setup.md` — step-by-step Google Cloud credential setup for Gmail/GCal
+
 ## Rules
 
 Detailed rules live in `.claude/rules/`:
