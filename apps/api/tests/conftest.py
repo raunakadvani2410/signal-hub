@@ -21,6 +21,7 @@ import app.db.models  # noqa: F401 — registers all ORM models with Base.metada
 from app.db.base import Base
 from app.db.seed import seed_integrations
 from app.db.session import get_session
+from app.routers import gmail as gmail_router
 from app.routers import health
 from app.routers import integrations as integration_router
 
@@ -32,6 +33,7 @@ def _make_test_app() -> FastAPI:
     test_app = FastAPI()
     test_app.include_router(health.router)
     test_app.include_router(integration_router.router, prefix="/api")
+    test_app.include_router(gmail_router.router, prefix="/api")
     return test_app
 
 
