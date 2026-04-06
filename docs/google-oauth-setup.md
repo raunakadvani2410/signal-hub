@@ -13,11 +13,11 @@ How to create the Google Cloud credentials needed for Gmail (and later Google Ca
 3. Name it anything (e.g. "Personal Command Center") → **Create**
 4. Make sure the new project is selected in the dropdown
 
-### 2. Enable the Gmail API
+### 2. Enable the Gmail and Calendar APIs
 
 1. Go to **APIs & Services → Library**
 2. Search for **Gmail API** → click it → **Enable**
-3. *(Later for Google Calendar: repeat with **Google Calendar API**)*
+3. Search for **Google Calendar API** → click it → **Enable**
 
 ### 3. Configure the OAuth consent screen
 
@@ -64,6 +64,7 @@ GMAIL_REDIRECT_URI=http://localhost:8000/api/gmail/callback
 | Scope | What it allows |
 |---|---|
 | `gmail.readonly` | Read Gmail messages and metadata — no send, no delete |
+| `calendar.readonly` | Read Google Calendar events — no create, no edit |
 | `openid` | Confirm identity via Google Sign-In |
 | `userinfo.email` | Read the account's email address |
 
@@ -105,12 +106,19 @@ Should return:
 }
 ```
 
-### Re-authenticate
+### Re-authenticate (required after adding calendar.readonly scope)
 
-Delete the token file and repeat the auth flow:
+The `calendar.readonly` scope was added to the app. Your existing token does not
+include it, so you must re-authorize once:
+
 ```bash
 rm apps/api/.tokens/gmail.json
 # Then open http://localhost:8000/api/gmail/auth in a browser
+```
+
+After completing the flow, sync Calendar events:
+```bash
+curl -X POST http://localhost:8000/api/gcal/sync
 ```
 
 ---
