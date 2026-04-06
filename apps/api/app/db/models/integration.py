@@ -29,6 +29,8 @@ class IntegrationModel(Base):
     last_synced_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Incremental sync cursor. None = no sync run yet (triggers a full fetch).
+    history_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

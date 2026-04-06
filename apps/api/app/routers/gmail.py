@@ -1,14 +1,18 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
+from app.db.models.integration import IntegrationModel
+from app.db.session import get_session
 from app.schemas.gmail import GmailProfileResponse
 from app.services.gmail import (
     build_auth_url,
     exchange_code,
     fetch_profile,
     load_tokens,
+    sync_gmail,
 )
 
 router = APIRouter(prefix="/gmail", tags=["gmail"])
@@ -89,3 +93,57 @@ async def gmail_profile():
         messages_total=profile.get("messagesTotal", 0),
         threads_total=profile.get("threadsTotal", 0),
     )
+
+
+@router.post("/sync")
+async def gmail_sync(session: AsyncSession = Depends(get_session)):
+    """
+    Synchronize Gmail inbox into the DB.
+
+    First run: full fetch of recent messages.
+    Subsequent runs: incremental via Gmail History API (only new messages).
+    Automatic fallback to full fetch if the stored historyId has expired.
+
+    Returns 401 if OAuth has not been completed yet.
+    Returns {"mode", "synced", "history_id"}.
+    """
+    if load_tokens() is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Gmail not connected. Complete OAuth at /api/gmail/auth.",
+        )
+    try:
+        result = await sync_gmail(session)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Gmail sync failed: {exc}")
+    return result
+
+
+@router.get("/status")
+async def gmail_status(session: AsyncSession = Depends(get_session)):
+    """
+    Return Gmail connection and sync state.
+
+    connected         — true only when a refresh_token is present on disk.
+                        A token file without a refresh_token cannot self-heal
+                        after the access token expires; re-auth is required.
+    has_refresh_token — explicit flag; use this to prompt re-auth in the UI.
+    last_synced_at    — ISO timestamp of the last successful sync, or null.
+    history_id        — incremental sync cursor, or null (= never synced).
+    """
+    from sqlalchemy import select as sa_select
+
+    result = await session.execute(
+        sa_select(IntegrationModel).where(IntegrationModel.integration_key == "gmail")
+    )
+    integration = result.scalar_one()
+
+    tokens = load_tokens()
+    has_refresh_token = bool(tokens and tokens.get("refresh_token"))
+
+    return {
+        "connected": has_refresh_token,
+        "has_refresh_token": has_refresh_token,
+        "last_synced_at": integration.last_synced_at,
+        "history_id": integration.history_id,
+    }
