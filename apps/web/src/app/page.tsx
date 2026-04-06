@@ -1,6 +1,22 @@
-import type { IntegrationConfig } from "@/lib/types";
+import type { FeedItem, IntegrationConfig } from "@/lib/types";
+import type { GmailStatus } from "@/lib/api";
 
-// ── status badge display config ──────────────────────────────────────────────
+// ── display config ────────────────────────────────────────────────────────────
+
+const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
+  gmail: {
+    label: "Gmail",
+    cls: "bg-red-950/70 text-red-400 border-red-900",
+  },
+  google_calendar: {
+    label: "Calendar",
+    cls: "bg-blue-950/70 text-blue-400 border-blue-900",
+  },
+  notion: {
+    label: "Notion",
+    cls: "bg-gray-800 text-gray-300 border-gray-700",
+  },
+};
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   official: {
@@ -29,77 +45,222 @@ const RISK_CLS: Record<string, string> = {
 
 // ── data fetching ─────────────────────────────────────────────────────────────
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
 async function fetchIntegrations(): Promise<IntegrationConfig[]> {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-  const res = await fetch(`${base}/api/integrations/`, { cache: "no-store" });
+  const res = await fetch(`${API_BASE}/api/integrations/`, { cache: "no-store" });
   if (!res.ok) throw new Error(`API responded ${res.status}`);
   return res.json();
+}
+
+async function fetchFeed(): Promise<FeedItem[]> {
+  const res = await fetch(`${API_BASE}/api/feed/?limit=50`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`API responded ${res.status}`);
+  return res.json();
+}
+
+async function fetchGmailStatus(): Promise<GmailStatus> {
+  const res = await fetch(`${API_BASE}/api/gmail/status`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`API responded ${res.status}`);
+  return res.json();
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+function formatSender(sender: string): string {
+  // "Alice <alice@example.com>" → "Alice"
+  const match = sender.match(/^([^<]+)</);
+  return match ? match[1].trim() : sender;
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const isToday =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+
+  if (isToday) {
+    return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 // ── page ──────────────────────────────────────────────────────────────────────
 
 export default async function Home() {
   let integrations: IntegrationConfig[] = [];
-  let error: string | null = null;
+  let feedItems: FeedItem[] = [];
+  let gmailStatus: GmailStatus | null = null;
+  let apiError: string | null = null;
 
   try {
-    integrations = await fetchIntegrations();
+    [integrations, feedItems, gmailStatus] = await Promise.all([
+      fetchIntegrations(),
+      fetchFeed(),
+      fetchGmailStatus(),
+    ]);
   } catch {
-    error =
+    apiError =
       "Could not reach the backend. Make sure the API is running on http://localhost:8000.";
   }
 
-  return (
-    <main className="max-w-3xl mx-auto px-6 py-12">
-      <h1 className="text-xl font-semibold text-white mb-1">
-        Personal Command Center
-      </h1>
-      <p className="text-gray-500 text-sm mb-8">Integrations</p>
+  const unreadCount = feedItems.filter((i) => !i.is_read).length;
 
-      {error ? (
+  return (
+    <main className="max-w-2xl mx-auto px-6 py-10 space-y-10">
+      {/* ── header ── */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold text-white tracking-tight">
+          Command Center
+        </h1>
+        {unreadCount > 0 && (
+          <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white">
+            {unreadCount} unread
+          </span>
+        )}
+      </div>
+
+      {apiError && (
         <div className="rounded border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-400">
-          {error}
+          {apiError}
         </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {integrations.map((item) => {
-            const status = STATUS_META[item.status] ?? {
-              label: item.status,
-              cls: "border-gray-700 bg-gray-800 text-gray-400",
-            };
-            return (
-              <div
-                key={item.integration_key}
-                className="rounded-lg border border-gray-800 bg-gray-900 px-5 py-4"
-              >
-                {/* header row */}
-                <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <span className="font-medium text-white">
-                    {item.display_name}
-                  </span>
-                  <span
-                    className={`rounded-full border px-2 py-0.5 text-xs font-medium ${status.cls}`}
+      )}
+
+      {/* ── unified feed ── */}
+      {!apiError && (
+        <section>
+          {/* section header */}
+          <div className="flex items-center gap-3 mb-2">
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
+              Inbox
+            </h2>
+            <div className="flex-1 border-t border-gray-800" />
+            <span className="text-xs text-gray-600">
+              {gmailStatus?.last_synced_at
+                ? `synced ${formatDate(gmailStatus.last_synced_at)}`
+                : gmailStatus?.connected
+                  ? "never synced"
+                  : "not connected"}
+            </span>
+          </div>
+
+          {feedItems.length === 0 ? (
+            <div className="rounded-lg border border-gray-800 bg-gray-900/50 px-5 py-8 text-center">
+              <p className="text-sm text-gray-500 mb-2">No items yet.</p>
+              <code className="text-xs text-gray-600">
+                curl -X POST http://localhost:8000/api/gmail/sync
+              </code>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-gray-800 overflow-hidden divide-y divide-gray-800/60">
+              {feedItems.map((item) => {
+                const badge =
+                  SOURCE_BADGE[item.source] ?? {
+                    label: item.source,
+                    cls: "bg-gray-800 text-gray-400 border-gray-700",
+                  };
+                const senderName = item.sender ? formatSender(item.sender) : null;
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`px-4 py-3 transition-colors ${
+                      item.is_read
+                        ? "bg-gray-950"
+                        : "bg-gray-900 border-l-2 border-blue-600"
+                    }`}
                   >
-                    {status.label}
-                  </span>
-                  <span className="ml-auto text-xs text-gray-600">
-                    connector:{" "}
-                    <span className="text-gray-400">{item.connector_type}</span>
-                  </span>
-                  <span
-                    className={`text-xs font-medium ${RISK_CLS[item.risk_level] ?? "text-gray-400"}`}
-                  >
-                    risk: {item.risk_level}
-                  </span>
+                    {/* top row: badge + sender + date + unread dot */}
+                    <div className="flex items-center gap-2 mb-1 min-w-0">
+                      <span
+                        className={`inline-flex shrink-0 items-center rounded border px-1.5 py-px text-[10px] font-medium leading-none ${badge.cls}`}
+                      >
+                        {badge.label}
+                      </span>
+                      {senderName && (
+                        <span
+                          className={`text-xs truncate flex-1 min-w-0 ${
+                            item.is_read ? "text-gray-500" : "text-gray-300"
+                          }`}
+                        >
+                          {senderName}
+                        </span>
+                      )}
+                      <span className="ml-auto text-xs text-gray-600 shrink-0 tabular-nums">
+                        {formatDate(item.received_at)}
+                      </span>
+                    </div>
+
+                    {/* title */}
+                    <p
+                      className={`text-sm truncate leading-snug ${
+                        item.is_read
+                          ? "text-gray-400"
+                          : "font-medium text-white"
+                      }`}
+                    >
+                      {item.title}
+                    </p>
+
+                    {/* preview */}
+                    {item.preview && (
+                      <p className="text-xs text-gray-600 truncate mt-0.5 leading-relaxed">
+                        {item.preview}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ── integrations (reference panel) ── */}
+      {!apiError && (
+        <section>
+          <div className="flex items-center gap-3 mb-2">
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
+              Integrations
+            </h2>
+            <div className="flex-1 border-t border-gray-800" />
+          </div>
+          <div className="flex flex-col gap-2">
+            {integrations.map((item) => {
+              const status = STATUS_META[item.status] ?? {
+                label: item.status,
+                cls: "border-gray-700 bg-gray-800 text-gray-400",
+              };
+              return (
+                <div
+                  key={item.integration_key}
+                  className="rounded-lg border border-gray-800 bg-gray-950 px-4 py-3"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-gray-200">
+                      {item.display_name}
+                    </span>
+                    <span
+                      className={`rounded-full border px-2 py-px text-[10px] font-medium ${status.cls}`}
+                    >
+                      {status.label}
+                    </span>
+                    <span className="ml-auto text-xs text-gray-700">
+                      {item.connector_type}
+                    </span>
+                    <span
+                      className={`text-xs ${RISK_CLS[item.risk_level] ?? "text-gray-500"}`}
+                    >
+                      {item.risk_level} risk
+                    </span>
+                  </div>
                 </div>
-                {/* notes */}
-                <p className="text-sm leading-relaxed text-gray-400">
-                  {item.notes}
-                </p>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </section>
       )}
     </main>
   );
