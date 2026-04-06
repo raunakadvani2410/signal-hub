@@ -1,6 +1,17 @@
-export type { Event, ItemSource, Message, Notification, Task } from "./models";
+export type {
+  Event,
+  FeedItem,
+  ItemSource,
+  ItemType,
+  Message,
+  Notification,
+  Task,
+} from "./models";
 export {
   EventSchema,
+  FeedItemSchema,
+  ItemSource,
+  ItemType,
   MessageSchema,
   NotificationSchema,
   TaskSchema,

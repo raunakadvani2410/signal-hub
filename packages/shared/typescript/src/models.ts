@@ -16,6 +16,9 @@ export const ItemSource = z.enum([
 ]);
 export type ItemSource = z.infer<typeof ItemSource>;
 
+export const ItemType = z.enum(["message", "event", "task"]);
+export type ItemType = z.infer<typeof ItemType>;
+
 export const MessageSchema = z.object({
   external_id: z.string(),
   source: ItemSource,
@@ -65,3 +68,27 @@ export const NotificationSchema = z.object({
   raw_json: z.record(z.unknown()).nullable().optional(),
 });
 export type Notification = z.infer<typeof NotificationSchema>;
+
+/**
+ * Normalized display shape for the unified inbox feed.
+ * Mirrors signal_hub_shared.models.FeedItem in Python.
+ *
+ * id         "{source}:{external_id}" — stable, unique across sources.
+ * item_type  Determines rendering: message | event | task.
+ * title      Subject (email), event title, task name, etc.
+ * preview    Short plaintext snippet for the second line.
+ * sender     "From" string or organiser. Null for tasks.
+ */
+export const FeedItemSchema = z.object({
+  id: z.string(),
+  source: ItemSource,
+  item_type: ItemType,
+  title: z.string(),
+  preview: z.string(),
+  sender: z.string().nullable().optional(),
+  received_at: z.string().datetime(),
+  is_read: z.boolean().default(false),
+  external_id: z.string(),
+  thread_id: z.string().nullable().optional(),
+});
+export type FeedItem = z.infer<typeof FeedItemSchema>;
