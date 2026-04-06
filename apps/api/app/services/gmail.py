@@ -42,6 +42,7 @@ from app.db.models.message import MessageModel
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/calendar.readonly",
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
 ]

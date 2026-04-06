@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.db.seed import seed_integrations
 from app.db.session import async_session_factory
-from app.routers import feed, gmail, health, integrations, messages
+from app.routers import feed, gcal, gmail, health, integrations, messages
 
 
 @asynccontextmanager
@@ -32,4 +32,5 @@ app.include_router(health.router)
 app.include_router(integrations.router, prefix="/api")
 app.include_router(gmail.router, prefix="/api")
 app.include_router(messages.router, prefix="/api")
+app.include_router(gcal.router, prefix="/api")
 app.include_router(feed.router, prefix="/api")
