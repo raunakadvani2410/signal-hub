@@ -24,6 +24,7 @@ from app.db.session import get_session
 from app.routers import feed as feed_router
 from app.routers import gcal as gcal_router
 from app.routers import gmail as gmail_router
+from app.routers import notion as notion_router
 from app.routers import health
 from app.routers import integrations as integration_router
 from app.routers import messages as messages_router
@@ -39,6 +40,7 @@ def _make_test_app() -> FastAPI:
     test_app.include_router(gmail_router.router, prefix="/api")
     test_app.include_router(messages_router.router, prefix="/api")
     test_app.include_router(gcal_router.router, prefix="/api")
+    test_app.include_router(notion_router.router, prefix="/api")
     test_app.include_router(feed_router.router, prefix="/api")
     return test_app
 
