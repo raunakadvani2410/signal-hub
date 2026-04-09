@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import type { FeedItem, IntegrationConfig } from "@/lib/types";
 import type { GmailStatus } from "@/lib/api";
 
@@ -86,6 +87,16 @@ function formatDate(iso: string): string {
     return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   }
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function formatRelativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 // ── shared feed item row ──────────────────────────────────────────────────────
@@ -188,6 +199,17 @@ function FeedSection({
 // ── page ──────────────────────────────────────────────────────────────────────
 
 export default async function Home() {
+  async function syncAll() {
+    "use server";
+    const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    await Promise.allSettled([
+      fetch(`${base}/api/gmail/sync`, { method: "POST" }),
+      fetch(`${base}/api/gcal/sync`, { method: "POST" }),
+      fetch(`${base}/api/notion/sync`, { method: "POST" }),
+    ]);
+    revalidatePath("/");
+  }
+
   let integrations: IntegrationConfig[] = [];
   let allItems: FeedItem[] = [];
   let gmailItems: FeedItem[] = [];
@@ -213,8 +235,8 @@ export default async function Home() {
 
   const unreadCount = allItems.filter((i) => !i.is_read).length;
 
-  const syncedLabel = gmailStatus?.last_synced_at
-    ? `synced ${formatDate(gmailStatus.last_synced_at)}`
+  const gmailSyncLabel = gmailStatus?.last_synced_at
+    ? `synced ${formatRelativeTime(gmailStatus.last_synced_at)}`
     : gmailStatus?.connected
       ? "never synced"
       : "not connected";
@@ -223,14 +245,31 @@ export default async function Home() {
     <main className="max-w-2xl mx-auto px-6 py-10 space-y-10">
       {/* ── header ── */}
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-white tracking-tight">
-          Signal Hub
-        </h1>
-        {unreadCount > 0 && (
-          <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white">
-            {unreadCount} unread
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold text-white tracking-tight">
+            Signal Hub
+          </h1>
+          {gmailStatus?.last_synced_at && (
+            <span className="text-xs text-gray-600">
+              synced {formatRelativeTime(gmailStatus.last_synced_at)}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {unreadCount > 0 && (
+            <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white">
+              {unreadCount} unread
+            </span>
+          )}
+          <form action={syncAll}>
+            <button
+              type="submit"
+              className="rounded border border-gray-700 bg-gray-900 px-2.5 py-1 text-xs text-gray-400 hover:border-gray-600 hover:text-gray-300 transition-colors"
+            >
+              Sync now
+            </button>
+          </form>
+        </div>
       </div>
 
       {apiError && (
@@ -246,7 +285,6 @@ export default async function Home() {
             title="Signal Hub"
             items={allItems}
             emptyMessage="No items yet. Run a sync to populate the feed."
-            rightLabel={syncedLabel}
           />
 
           {/* ── Gmail ── */}
@@ -254,6 +292,7 @@ export default async function Home() {
             title="Gmail"
             items={gmailItems}
             emptyMessage="No emails synced yet."
+            rightLabel={gmailSyncLabel}
           />
 
           {/* ── Google Calendar ── */}
