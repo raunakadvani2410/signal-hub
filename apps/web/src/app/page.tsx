@@ -53,8 +53,10 @@ async function fetchIntegrations(): Promise<IntegrationConfig[]> {
   return res.json();
 }
 
-async function fetchFeed(): Promise<FeedItem[]> {
-  const res = await fetch(`${API_BASE}/api/feed/?limit=50`, { cache: "no-store" });
+async function fetchFeed(source?: string, limit = 50): Promise<FeedItem[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (source) params.set("source", source);
+  const res = await fetch(`${API_BASE}/api/feed/?${params}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`API responded ${res.status}`);
   return res.json();
 }
@@ -68,7 +70,6 @@ async function fetchGmailStatus(): Promise<GmailStatus> {
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function formatSender(sender: string): string {
-  // "Alice <alice@example.com>" → "Alice"
   const match = sender.match(/^([^<]+)</);
   return match ? match[1].trim() : sender;
 }
@@ -87,33 +88,143 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+// ── shared feed item row ──────────────────────────────────────────────────────
+
+function FeedItemRow({ item }: { item: FeedItem }) {
+  const badge = SOURCE_BADGE[item.source] ?? {
+    label: item.source,
+    cls: "bg-gray-800 text-gray-400 border-gray-700",
+  };
+  const senderName = item.sender ? formatSender(item.sender) : null;
+
+  return (
+    <div
+      className={`px-4 py-3 transition-colors ${
+        item.is_read
+          ? "bg-gray-950"
+          : "bg-gray-900 border-l-2 border-blue-600"
+      }`}
+    >
+      {/* top row: badge + sender/title-label + date */}
+      <div className="flex items-center gap-2 mb-1 min-w-0">
+        <span
+          className={`inline-flex shrink-0 items-center rounded border px-1.5 py-px text-[10px] font-medium leading-none ${badge.cls}`}
+        >
+          {badge.label}
+        </span>
+        {senderName && (
+          <span
+            className={`text-xs truncate flex-1 min-w-0 ${
+              item.is_read ? "text-gray-500" : "text-gray-300"
+            }`}
+          >
+            {senderName}
+          </span>
+        )}
+        <span className="ml-auto text-xs text-gray-600 shrink-0 tabular-nums">
+          {formatDate(item.received_at)}
+        </span>
+      </div>
+
+      {/* title */}
+      <p
+        className={`text-sm truncate leading-snug ${
+          item.is_read ? "text-gray-400" : "font-medium text-white"
+        }`}
+      >
+        {item.title}
+      </p>
+
+      {/* preview */}
+      {item.preview && (
+        <p className="text-xs text-gray-600 truncate mt-0.5 leading-relaxed">
+          {item.preview}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── feed section ──────────────────────────────────────────────────────────────
+
+function FeedSection({
+  title,
+  items,
+  emptyMessage,
+  rightLabel,
+}: {
+  title: string;
+  items: FeedItem[];
+  emptyMessage: string;
+  rightLabel?: string;
+}) {
+  return (
+    <section>
+      <div className="flex items-center gap-3 mb-2">
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
+          {title}
+        </h2>
+        <div className="flex-1 border-t border-gray-800" />
+        {rightLabel && (
+          <span className="text-xs text-gray-600">{rightLabel}</span>
+        )}
+      </div>
+
+      {items.length === 0 ? (
+        <div className="rounded-lg border border-gray-800 bg-gray-900/50 px-5 py-6 text-center">
+          <p className="text-sm text-gray-500">{emptyMessage}</p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-gray-800 overflow-hidden divide-y divide-gray-800/60">
+          {items.map((item) => (
+            <FeedItemRow key={item.id} item={item} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ── page ──────────────────────────────────────────────────────────────────────
 
 export default async function Home() {
   let integrations: IntegrationConfig[] = [];
-  let feedItems: FeedItem[] = [];
+  let allItems: FeedItem[] = [];
+  let gmailItems: FeedItem[] = [];
+  let calendarItems: FeedItem[] = [];
+  let notionItems: FeedItem[] = [];
   let gmailStatus: GmailStatus | null = null;
   let apiError: string | null = null;
 
   try {
-    [integrations, feedItems, gmailStatus] = await Promise.all([
-      fetchIntegrations(),
-      fetchFeed(),
-      fetchGmailStatus(),
-    ]);
+    [integrations, allItems, gmailStatus, gmailItems, calendarItems, notionItems] =
+      await Promise.all([
+        fetchIntegrations(),
+        fetchFeed(),
+        fetchGmailStatus(),
+        fetchFeed("gmail"),
+        fetchFeed("google_calendar", 20),
+        fetchFeed("notion"),
+      ]);
   } catch {
     apiError =
       "Could not reach the backend. Make sure the API is running on http://localhost:8000.";
   }
 
-  const unreadCount = feedItems.filter((i) => !i.is_read).length;
+  const unreadCount = allItems.filter((i) => !i.is_read).length;
+
+  const syncedLabel = gmailStatus?.last_synced_at
+    ? `synced ${formatDate(gmailStatus.last_synced_at)}`
+    : gmailStatus?.connected
+      ? "never synced"
+      : "not connected";
 
   return (
     <main className="max-w-2xl mx-auto px-6 py-10 space-y-10">
       {/* ── header ── */}
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-white tracking-tight">
-          Command Center
+          Signal Hub
         </h1>
         {unreadCount > 0 && (
           <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white">
@@ -128,139 +239,80 @@ export default async function Home() {
         </div>
       )}
 
-      {/* ── unified feed ── */}
       {!apiError && (
-        <section>
-          {/* section header */}
-          <div className="flex items-center gap-3 mb-2">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
-              Inbox
-            </h2>
-            <div className="flex-1 border-t border-gray-800" />
-            <span className="text-xs text-gray-600">
-              {gmailStatus?.last_synced_at
-                ? `synced ${formatDate(gmailStatus.last_synced_at)}`
-                : gmailStatus?.connected
-                  ? "never synced"
-                  : "not connected"}
-            </span>
-          </div>
+        <>
+          {/* ── consolidated Signal Hub feed ── */}
+          <FeedSection
+            title="Signal Hub"
+            items={allItems}
+            emptyMessage="No items yet. Run a sync to populate the feed."
+            rightLabel={syncedLabel}
+          />
 
-          {feedItems.length === 0 ? (
-            <div className="rounded-lg border border-gray-800 bg-gray-900/50 px-5 py-8 text-center">
-              <p className="text-sm text-gray-500 mb-2">No items yet.</p>
-              <code className="text-xs text-gray-600">
-                curl -X POST http://localhost:8000/api/gmail/sync
-              </code>
+          {/* ── Gmail ── */}
+          <FeedSection
+            title="Gmail"
+            items={gmailItems}
+            emptyMessage="No emails synced yet."
+          />
+
+          {/* ── Google Calendar ── */}
+          <FeedSection
+            title="Google Calendar"
+            items={calendarItems}
+            emptyMessage="No upcoming events in the next 7 days."
+          />
+
+          {/* ── Notion ── */}
+          <FeedSection
+            title="Notion"
+            items={notionItems}
+            emptyMessage="No open tasks. Run: curl -X POST http://localhost:8000/api/notion/sync"
+          />
+
+          {/* ── integrations (reference panel) ── */}
+          <section>
+            <div className="flex items-center gap-3 mb-2">
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
+                Integrations
+              </h2>
+              <div className="flex-1 border-t border-gray-800" />
             </div>
-          ) : (
-            <div className="rounded-lg border border-gray-800 overflow-hidden divide-y divide-gray-800/60">
-              {feedItems.map((item) => {
-                const badge =
-                  SOURCE_BADGE[item.source] ?? {
-                    label: item.source,
-                    cls: "bg-gray-800 text-gray-400 border-gray-700",
-                  };
-                const senderName = item.sender ? formatSender(item.sender) : null;
-
+            <div className="flex flex-col gap-2">
+              {integrations.map((item) => {
+                const status = STATUS_META[item.status] ?? {
+                  label: item.status,
+                  cls: "border-gray-700 bg-gray-800 text-gray-400",
+                };
                 return (
                   <div
-                    key={item.id}
-                    className={`px-4 py-3 transition-colors ${
-                      item.is_read
-                        ? "bg-gray-950"
-                        : "bg-gray-900 border-l-2 border-blue-600"
-                    }`}
+                    key={item.integration_key}
+                    className="rounded-lg border border-gray-800 bg-gray-950 px-4 py-3"
                   >
-                    {/* top row: badge + sender + date + unread dot */}
-                    <div className="flex items-center gap-2 mb-1 min-w-0">
-                      <span
-                        className={`inline-flex shrink-0 items-center rounded border px-1.5 py-px text-[10px] font-medium leading-none ${badge.cls}`}
-                      >
-                        {badge.label}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-gray-200">
+                        {item.display_name}
                       </span>
-                      {senderName && (
-                        <span
-                          className={`text-xs truncate flex-1 min-w-0 ${
-                            item.is_read ? "text-gray-500" : "text-gray-300"
-                          }`}
-                        >
-                          {senderName}
-                        </span>
-                      )}
-                      <span className="ml-auto text-xs text-gray-600 shrink-0 tabular-nums">
-                        {formatDate(item.received_at)}
+                      <span
+                        className={`rounded-full border px-2 py-px text-[10px] font-medium ${status.cls}`}
+                      >
+                        {status.label}
+                      </span>
+                      <span className="ml-auto text-xs text-gray-700">
+                        {item.connector_type}
+                      </span>
+                      <span
+                        className={`text-xs ${RISK_CLS[item.risk_level] ?? "text-gray-500"}`}
+                      >
+                        {item.risk_level} risk
                       </span>
                     </div>
-
-                    {/* title */}
-                    <p
-                      className={`text-sm truncate leading-snug ${
-                        item.is_read
-                          ? "text-gray-400"
-                          : "font-medium text-white"
-                      }`}
-                    >
-                      {item.title}
-                    </p>
-
-                    {/* preview */}
-                    {item.preview && (
-                      <p className="text-xs text-gray-600 truncate mt-0.5 leading-relaxed">
-                        {item.preview}
-                      </p>
-                    )}
                   </div>
                 );
               })}
             </div>
-          )}
-        </section>
-      )}
-
-      {/* ── integrations (reference panel) ── */}
-      {!apiError && (
-        <section>
-          <div className="flex items-center gap-3 mb-2">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
-              Integrations
-            </h2>
-            <div className="flex-1 border-t border-gray-800" />
-          </div>
-          <div className="flex flex-col gap-2">
-            {integrations.map((item) => {
-              const status = STATUS_META[item.status] ?? {
-                label: item.status,
-                cls: "border-gray-700 bg-gray-800 text-gray-400",
-              };
-              return (
-                <div
-                  key={item.integration_key}
-                  className="rounded-lg border border-gray-800 bg-gray-950 px-4 py-3"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-gray-200">
-                      {item.display_name}
-                    </span>
-                    <span
-                      className={`rounded-full border px-2 py-px text-[10px] font-medium ${status.cls}`}
-                    >
-                      {status.label}
-                    </span>
-                    <span className="ml-auto text-xs text-gray-700">
-                      {item.connector_type}
-                    </span>
-                    <span
-                      className={`text-xs ${RISK_CLS[item.risk_level] ?? "text-gray-500"}`}
-                    >
-                      {item.risk_level} risk
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+          </section>
+        </>
       )}
     </main>
   );
