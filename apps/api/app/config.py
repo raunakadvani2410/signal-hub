@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     notion_token: str = ""
     notion_todo_database_id: str = ""
 
+    # ── background sync ───────────────────────────────────────────────────────
+    # How often (seconds) the background sync loop fires. Default: 5 minutes.
+    # Set to 0 to disable background polling (startup-only sync still runs).
+    sync_interval_seconds: int = 300
+
     # ── feature flags ─────────────────────────────────────────────────────────
     enable_imessage: bool = False
 
