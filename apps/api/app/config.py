@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     gmail_client_secret: str = ""
     gmail_redirect_uri: str = "http://localhost:8000/api/gmail/callback"
 
+    # ── Notion ────────────────────────────────────────────────────────────────
+    notion_token: str = ""
+    notion_todo_database_id: str = ""
+
     # ── feature flags ─────────────────────────────────────────────────────────
     enable_imessage: bool = False
 
